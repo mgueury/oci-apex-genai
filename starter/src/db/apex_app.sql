@@ -33,7 +33,7 @@ prompt APPLICATION 103 - AI_SEARCH
 -- Application Export:
 --   Application:     103
 --   Name:            AI_SEARCH
---   Date and Time:   11:22 Tuesday July 30, 2024
+--   Date and Time:   15:18 Tuesday July 30, 2024
 --   Exported By:     VECTOR
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -21724,6 +21724,7 @@ wwv_flow_imp_shared.create_install_script(
 '',
 '',
 '',
+'',
 'create or replace TRIGGER DOCS_TRIGGER',
 '  BEFORE INSERT OR UPDATE ON DOCS',
 '  FOR EACH ROW',
@@ -21831,6 +21832,9 @@ wwv_flow_imp_shared.create_install_script(
 '  CREATE UNIQUE INDEX "DR$DOCS_INDEX$KD" ON "DR$DOCS_INDEX$K" ("DOCID", "TEXTKEY") ',
 '  ;',
 '',
+'  CREATE INDEX "DOCS_LANCHAIN_INDEX" ON "DOCS_LANGCHAIN" ("TEXT") ',
+'   INDEXTYPE IS "CTXSYS"."CONTEXT" ;',
+'',
 '  CREATE UNIQUE INDEX "DOCS_PK" ON "DOCS" ("ID") ',
 '  ;',
 '',
@@ -21842,6 +21846,7 @@ wwv_flow_imp_shared.create_install_script(
 '',
 '  CREATE UNIQUE INDEX "DOCS_CONFIG_PK" ON "DOCS_CONFIG" ("ID") ',
 '  ;',
+'',
 '',
 '',
 '',
@@ -21873,6 +21878,7 @@ wwv_flow_imp_shared.create_install_script(
 '  FUNCTION get_doc_url( a_id in number ) RETURN VARCHAR2;',
 'end;',
 '/',
+'',
 '',
 '',
 '',
@@ -21959,19 +21965,22 @@ wwv_flow_imp_shared.create_install_script(
 '    s CLOB; ',
 '    start_vector number;',
 '    stop_vector number;',
+'    body CLOB;',
 'BEGIN ',
 '    log( ''<embedText> oci_credential'', oci_credential);',
-'    resp := DBMS_CLOUD.send_request( ',
-'        credential_name => oci_credential, ',
-'        uri =>''https://inference.generativeai.''|| region || ''.oci.oraclecloud.com/20231130/actions/embedText'',',
-'        method => ''POST'', ',
-'        body => UTL_RAW.cast_to_raw( JSON_OBJECT (',
+'    body := TO_CHAR(JSON_OBJECT (',
 '            ''compartmentId'' VALUE compartment_ocid,',
 '            ''servingMode'' VALUE JSON_OBJECT( ''modelId'' VALUE ''cohere.embed-multilingual-v3.0'', ',
 '                                             ''servingType'' VALUE ''ON_DEMAND'' ),   ',
 '            ''inputs'' VALUE JSON_ARRAY( c ),',
 '            ''truncate'' VALUE ''START''',
-'        ))    ',
+'        ));',
+'    log( ''<embedText> body'', body);    ',
+'    resp := DBMS_CLOUD.send_request( ',
+'        credential_name => oci_credential, ',
+'        uri =>''https://inference.generativeai.''|| region || ''.oci.oraclecloud.com/20231130/actions/embedText'',',
+'        method => ''POST'', ',
+'        body => UTL_RAW.cast_to_raw( body )    ',
 '    ); ',
 '    b := DBMS_CLOUD.get_response_text(resp); ',
 '    -- JSON PARSING does not work....',
@@ -22181,8 +22190,8 @@ wwv_flow_imp_shared.create_install_script(
 '  chat_result varchar2(32767);',
 '  p2_type varchar2(256);',
 '  p_path varchar2(256);',
-'  p_doc_id number;',
 '  p_page number;',
+'  counter number;',
 'begin',
 '  if a_session_id is not null then',
 '     chat := new JSON_OBJECT_T;',
@@ -22207,14 +22216,35 @@ wwv_flow_imp_shared.create_install_script(
 '',
 '  p2_type := APEX_UTIL.GET_SESSION_STATE( ''P2_TYPE'' );',
 '  if p2_type = ''rag'' then',
-'      chat_result := chat_result || chr(10)|| ''Documents:''|| chr(10);',
-'      for rec in (select t.filename, t.chunck_id chunck_id from json_table(chat_json,''$.chatResponse.documents[*]'' COLUMNS ( filename VARCHAR PATH ''$.filename'', chunck_id VARCHAR PATH ''$.chunck_id'' )) as t) loop',
-'        select to_number(doc_id), to_number(page) into p_doc_id, p_page from v_docs_chunck where id=hextoraw(rec.chunck_id);',
-'        chat_result := chat_result || ''- ['' || rec.filename || ''- page '' || p_page || '']('' || get_doc_url( p_doc_id ) || ''#page='' || p_page || '')'' || chr(10);',
+'      -- Documents',
+'      chat_result := chat_result || chr(10) || chr(10) || ''Source: '' || chr(10) || ''- Documents: '';',
+'      counter := 0;',
+'      for rec in (',
+'        select distinct t.filename, c.doc_id, c.page from',
+'         json_table(chat_json,''$.chatResponse.documents[*]'' COLUMNS ( filename VARCHAR PATH ''$.filename'', chunck_id VARCHAR PATH ''$.chunck_id'' )) t,',
+'         v_docs_chunck c',
+'         where c.id=hextoraw(t.chunck_id)',
+'      ) loop',
+'        counter := counter + 1;',
+'        if counter>1 then ',
+'          chat_result := chat_result || '' / '';',
+'        end if;  ',
+'         if rec.page = ''0'' or rec.page= '''' or rec.page is null then',
+'            chat_result := chat_result || ''['' || rec.filename || '']('' || get_doc_url( rec.doc_id ) || '')'';',
+'         else',
+'            chat_result := chat_result || ''['' || rec.filename || '' - page '' || rec.page || '']('' || get_doc_url( rec.doc_id ) || ''#page='' || rec.page || '')'';',
+'         end if;',
 '      end loop;',
-'      chat_result := chat_result || chr(10) || ''Citations:''|| chr(10);',
+'',
+'      -- Citations',
+'      chat_result := chat_result || chr(10) || ''- Citations: '';',
+'      counter := 0;',
 '      for rec in (select t.text from json_table(chat_json,''$.chatResponse.citations[*]'' COLUMNS ( text VARCHAR PATH ''$.text'' )) as t) loop',
-'        chat_result := chat_result || ''- '' || rec.text || chr(10);',
+'        counter := counter + 1;',
+'        if counter>1 then ',
+'          chat_result := chat_result || '' / '';',
+'        end if;  ',
+'        chat_result := chat_result || rec.text;',
 '      end loop;',
 '  end if;',
 '  return chat_result;',
@@ -22275,6 +22305,13 @@ wwv_flow_imp_shared.create_install_object(
 ,p_object_owner=>'#OWNER#'
 ,p_object_type=>'INDEX'
 ,p_object_name=>'DOCS_INDEX'
+);
+wwv_flow_imp_shared.create_install_object(
+ p_id=>wwv_flow_imp.id(4556922013498490)
+,p_script_id=>wwv_flow_imp.id(2962399420517362)
+,p_object_owner=>'#OWNER#'
+,p_object_type=>'INDEX'
+,p_object_name=>'DOCS_LANCHAIN_INDEX'
 );
 wwv_flow_imp_shared.create_install_object(
  p_id=>wwv_flow_imp.id(2962849801517370)
