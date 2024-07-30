@@ -1,0 +1,17 @@
+# HTTP
+requests
+flask
+
+# LangChain
+langchain
+langchain_community
+
+unstructured
+qdrant-client
+pypdf
+
+# Oracle OCI
+oci
+
+# Oracle DB
+oracledb
