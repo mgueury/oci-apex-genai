@@ -32,6 +32,7 @@ locals {
   bucket_url = "https://objectstorage.${var.region}.oraclecloud.com/n/${var.namespace}/b/${var.prefix}-public-bucket/o"
 }  
 
+/*
 resource "oci_identity_domains_dynamic_resource_group" "starter-adb-dyngroup" {
     #Required
     provider       = oci.home    
@@ -76,5 +77,19 @@ resource "oci_identity_policy" "starter-instance-policy" {
 
     statements = [
         "Allow dynamic-group ${var.prefix}-instance-dyngroup to manage generative-ai-family in compartment id ${var.compartment_ocid}"
+    ]
+}
+*/
+
+// WA: ADB Dynamic group does not work above (instance does) 
+// WA for the ORA-20404: Object not found - https://inference.generativeai.eu-frankfurt-1.oci.oraclecloud.com/20231130/actions/embedText 
+resource "oci_identity_policy" "starter-wa-policy" {
+    provider       = oci.home    
+    name           = "${var.prefix}-wa-policy"
+    description    = "${var.prefix} wa policy"
+    compartment_id = local.lz_appdev_cmp_ocid
+
+    statements = [
+        "Allow any-user to use generative-ai-family in compartment id ${var.compartment_ocid}"
     ]
 }
