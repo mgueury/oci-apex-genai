@@ -17,6 +17,7 @@ from oci.generative_ai_inference.models import CohereChatRequest
 from oci.generative_ai_inference.models import ChatDetails, OnDemandServingMode
 from oci.auth.signers import InstancePrincipalsSecurityTokenSigner
 from oci.retry import NoneRetryStrategy
+import apex
 
 # Initialize connection based on DB_TYPE
 if config.DB_TYPE == "oracle":
@@ -66,6 +67,7 @@ if config.DB_TYPE == "oracle":
         table_name=config.ORACLE_TABLE_NAME,
         distance_strategy=DistanceStrategy.DOT_PRODUCT,
     )
+    apex.createIndex(connection)
 else:
     db = Qdrant.from_documents(
         docs,

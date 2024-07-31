@@ -132,7 +132,7 @@ def insertDocsChunck(result):
                 "region": os.getenv("TF_VAR_region"), 
                 "summary": dictString(result,"summary"), 
                 "page": dictInt(result,"page"), 
-                "char_start": "1", 
+                "char_start": "0", 
                 "char_end": "0" 
             },
         )
@@ -154,6 +154,20 @@ def deleteDoc(dbConn, path):
         print(f"<deleteDoc> Successfully {cur.rowcount} docs deleted")
     except (Exception) as error:
         print(f"<deleteDoc> Error deleting: {error}")
+    finally:
+        # Close the cursor and connection
+        if cur:
+            cur.close()
+
+# -- createIndex -----------------------------------------------------------------
+def createIndex(dbConn):
+    cur = dbConn.cursor()
+    log(f"<createIndex>")
+    try:
+        cur.execute('CREATE INDEX "DOCS_LANCHAIN_INDEX" ON "DOCS_LANGCHAIN" ("TEXT") INDEXTYPE IS "CTXSYS"."CONTEXT"')
+        print(f"<createIndex> Index created")
+    except (Exception) as error:
+        print(f"<createIndex> Error creating index: {error}")
     finally:
         # Close the cursor and connection
         if cur:

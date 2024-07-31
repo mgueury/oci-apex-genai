@@ -33,7 +33,7 @@ prompt APPLICATION 103 - AI_SEARCH
 -- Application Export:
 --   Application:     103
 --   Name:            AI_SEARCH
---   Date and Time:   17:27 Tuesday July 30, 2024
+--   Date and Time:   16:17 Wednesday July 31, 2024
 --   Exported By:     VECTOR
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -70,7 +70,7 @@ prompt APPLICATION 103 - AI_SEARCH
 --       Reports:
 --       E-Mail:
 --     Supporting Objects:  Included
---       Install scripts:          3
+--       Install scripts:          4
 --   Version:         24.1.0
 --   Instance ID:     716662871867333
 --
@@ -18484,7 +18484,7 @@ wwv_flow_imp_page.create_report_region(
 '  if :P2_TYPE is null then',
 '    return ''select ''''chunck_id'''' chunck_id, ''''filename'''' filename, ''''snippet'''' snippet from dual'';',
 '  else',
-'    return ''select chunck_id,to_char(sysdate,''''DD-MI:SS'''') filename, snippet',
+'    return ''select chunck_id, filename, snippet',
 '      from json_table(:P2_DOCUMENTS, ',
 '        ''''$[*]'''' COLUMNS (',
 '            chunck_id VARCHAR PATH ''''$.chunck_id'''',',
@@ -21704,26 +21704,14 @@ wwv_flow_imp_shared.create_install_script(
 '/',
 'ALTER TRIGGER "DOCS_TRIGGER_DELETE" ENABLE;',
 '',
-'  CREATE UNIQUE INDEX "DR$DOCS_INDEX$KD" ON "DR$DOCS_INDEX$K" ("DOCID", "TEXTKEY") ',
-'  ;',
-'',
-'  CREATE INDEX "DOCS_LANCHAIN_INDEX" ON "DOCS_LANGCHAIN" ("TEXT") ',
-'   INDEXTYPE IS "CTXSYS"."CONTEXT" ;',
-'',
 '  CREATE UNIQUE INDEX "DOCS_PK" ON "DOCS" ("ID") ',
 '  ;',
 '',
 '  CREATE UNIQUE INDEX "DOCS_CHUNCK_PK" ON "DOCS_CHUNCK" ("ID") ',
 '  ;',
 '',
-'  CREATE INDEX "DOCS_INDEX" ON "DOCS_CHUNCK" ("CONTENT") ',
-'   INDEXTYPE IS "CTXSYS"."CONTEXT" ;',
-'',
 '  CREATE UNIQUE INDEX "DOCS_CONFIG_PK" ON "DOCS_CONFIG" ("ID") ',
 '  ;',
-'',
-'',
-'',
 '',
 '',
 '',
@@ -21749,9 +21737,6 @@ wwv_flow_imp_shared.create_install_script(
 '  FUNCTION get_doc_url( a_id in number ) RETURN VARCHAR2;',
 'end;',
 '/',
-'',
-'',
-'',
 '',
 '',
 '',
@@ -21881,9 +21866,6 @@ wwv_flow_imp_shared.create_install_script(
 'end;',
 '/',
 'ALTER TRIGGER "DOCS_TRIGGER_DELETE" ENABLE;',
-'',
-'',
-'',
 '',
 '',
 '',
@@ -22187,6 +22169,7 @@ wwv_flow_imp_shared.create_install_script(
 '  p_path varchar2(256);',
 '  p_page number;',
 '  counter number;',
+'  counter2 number;  ',
 'begin',
 '  if a_session_id is not null then',
 '     chat := new JSON_OBJECT_T;',
@@ -22211,6 +22194,42 @@ wwv_flow_imp_shared.create_install_script(
 '',
 '  p2_type := APEX_UTIL.GET_SESSION_STATE( ''P2_TYPE'' );',
 '  if p2_type = ''rag'' then',
+'        -- Documents',
+'      chat_result := chat_result || chr(10) || chr(10) || ''Documents: '' || chr(10);',
+'      counter := 0;',
+'      for rec in (',
+'        select distinct t.filename, c.doc_id, c.page from',
+'           json_table(chat_json,''$.chatResponse.documents[*]'' COLUMNS ( filename VARCHAR PATH ''$.filename'', chunck_id VARCHAR PATH ''$.chunck_id'')) t,',
+'           v_docs_chunck c',
+'        where c.id=hextoraw(t.chunck_id)',
+'      ) loop',
+'        counter := counter + 1;',
+'        if rec.page = ''0'' or rec.page= '''' or rec.page is null then',
+'          chat_result := chat_result || ''- ['' || rec.filename || '']('' || get_doc_url( rec.doc_id ) || '') ('';',
+'        else',
+'          chat_result := chat_result || ''- ['' || rec.filename || '' - page '' || rec.page || '']('' || get_doc_url( rec.doc_id ) || ''#page='' || rec.page || '')'';',
+'        end if;',
+'        counter2 := 0;',
+'        for rec2 in (',
+'          select cit.text from ',
+'            json_table(chat_json,''$.chatResponse.citations[*]'' COLUMNS ( text VARCHAR PATH ''$.text'', documentId VARCHAR PATH ''$.documentIds[0]'' ) ) as cit,',
+'            json_table(chat_json,''$.chatResponse.documents[*]'' COLUMNS ( filename VARCHAR PATH ''$.filename'', chunck_id VARCHAR PATH ''$.chunck_id'', id VARCHAR PATH ''$.id'')) as t,',
+'            v_docs_chunck c',
+'          where c.doc_id=rec.doc_id and c.page=rec.page and c.id=hextoraw(t.chunck_id) and cit.documentId=t.id) loop',
+'          counter2 := counter2 + 1;',
+'          if counter2 = 1  then',
+'            chat_result := chat_result || '' ( '';',
+'          else ',
+'            chat_result := chat_result || '' / '';',
+'          end if;  ',
+'          chat_result := chat_result || rec2.text;',
+'        end loop;',
+'        if counter2>0 then',
+'          chat_result := chat_result || '' )'';',
+'        end if;',
+'         chat_result := chat_result || chr(10);',
+'      end loop;',
+'      /*',
 '      -- Documents',
 '      chat_result := chat_result || chr(10) || chr(10) || ''Source: '' || chr(10) || ''- Documents: '';',
 '      counter := 0;',
@@ -22241,6 +22260,7 @@ wwv_flow_imp_shared.create_install_script(
 '        end if;  ',
 '        chat_result := chat_result || rec.text;',
 '      end loop;',
+'      */',
 '  end if;',
 '  return chat_result;',
 'end;',
@@ -22253,10 +22273,10 @@ wwv_flow_imp_shared.create_install_script(
 '  if rec_source_type=''APEX'' then',
 '     return ''/ords/vector/ords-viewer/docs/''||a_id;',
 '  elsif INSTR( rec_path, ''https://'' )>0 then',
-'     return rec_path;',
+'     return REPLACE(rec_path, '' '', ''%20'');',
 '  else',
 '     -- https://objectstorage.eu-frankfurt-1.oraclecloud.com/n/fr03kzmuvhtf/b/psql-public-bucket/o/image_hello.png#page=0',
-'     return ''https://objectstorage.''|| region || ''.oraclecloud.com'' || rec_path;',
+'     return ''https://objectstorage.''|| region || ''.oraclecloud.com'' || REPLACE(rec_path, '' '', ''%20'');',
 '  end if;',
 'end;',
 '',
@@ -22299,32 +22319,11 @@ wwv_flow_imp_shared.create_install_object(
 ,p_object_name=>'DOCS_CONFIG_PK'
 );
 wwv_flow_imp_shared.create_install_object(
- p_id=>wwv_flow_imp.id(2962684954517370)
-,p_script_id=>wwv_flow_imp.id(2962399420517362)
-,p_object_owner=>'#OWNER#'
-,p_object_type=>'INDEX'
-,p_object_name=>'DOCS_INDEX'
-);
-wwv_flow_imp_shared.create_install_object(
- p_id=>wwv_flow_imp.id(4556922013498490)
-,p_script_id=>wwv_flow_imp.id(2962399420517362)
-,p_object_owner=>'#OWNER#'
-,p_object_type=>'INDEX'
-,p_object_name=>'DOCS_LANCHAIN_INDEX'
-);
-wwv_flow_imp_shared.create_install_object(
  p_id=>wwv_flow_imp.id(2962849801517370)
 ,p_script_id=>wwv_flow_imp.id(2962399420517362)
 ,p_object_owner=>'#OWNER#'
 ,p_object_type=>'INDEX'
 ,p_object_name=>'DOCS_PK'
-);
-wwv_flow_imp_shared.create_install_object(
- p_id=>wwv_flow_imp.id(4074340951470948)
-,p_script_id=>wwv_flow_imp.id(2962399420517362)
-,p_object_owner=>'#OWNER#'
-,p_object_type=>'INDEX'
-,p_object_name=>'DR$DOCS_INDEX$KD'
 );
 wwv_flow_imp_shared.create_install_object(
  p_id=>wwv_flow_imp.id(2963054691517370)
@@ -22429,6 +22428,37 @@ wwv_flow_imp_shared.create_install_script(
 'VALUES (1,''Enter your_namespace'',''apexgenai-public-bucket'',''eu-frankfurt-1'',''ocid1.compartment.oc1..XXXXXXXXXXXXXX'',''TRUE'',''OCI$RESOURCE_PRINCIPAL'');',
 'commit;',
 ''))
+);
+end;
+/
+prompt --application/deployment/install/install_index
+begin
+wwv_flow_imp_shared.create_install_script(
+ p_id=>wwv_flow_imp.id(4564012563145279)
+,p_install_id=>wwv_flow_imp.id(14849539383728112)
+,p_name=>'INDEX'
+,p_sequence=>40
+,p_script_type=>'INSTALL'
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'  CREATE INDEX "DOCS_LANCHAIN_INDEX" ON "DOCS_LANGCHAIN" ("TEXT") ',
+'   INDEXTYPE IS "CTXSYS"."CONTEXT" ;',
+'',
+'  CREATE INDEX "DOCS_INDEX" ON "DOCS_CHUNCK" ("CONTENT") ',
+'   INDEXTYPE IS "CTXSYS"."CONTEXT" ; '))
+);
+wwv_flow_imp_shared.create_install_object(
+ p_id=>wwv_flow_imp.id(4564134160145281)
+,p_script_id=>wwv_flow_imp.id(4564012563145279)
+,p_object_owner=>'#OWNER#'
+,p_object_type=>'INDEX'
+,p_object_name=>'DOCS_INDEX'
+);
+wwv_flow_imp_shared.create_install_object(
+ p_id=>wwv_flow_imp.id(4564301223145281)
+,p_script_id=>wwv_flow_imp.id(4564012563145279)
+,p_object_owner=>'#OWNER#'
+,p_object_type=>'INDEX'
+,p_object_name=>'DOCS_LANCHAIN_INDEX'
 );
 end;
 /
