@@ -62,7 +62,8 @@ def apexInsertSubDocs( connection, sub_docs ):
         doc.metadata["content_type"] = content_type
         doc.metadata["filename"] = dictString(result,"filename")
         doc.metadata["path"] = dictString(result,"path")
-    log( sub_docs )    
+        if doc.metadata.get("page") is not None:
+            doc.metadata["page"] = doc.metadata["page"]+1
     return sub_docs
 
 # -- insertDocs -----------------------------------------------------------------
@@ -131,7 +132,7 @@ def insertDocsChunck(result):
                 "region": os.getenv("TF_VAR_region"), 
                 "summary": dictString(result,"summary"), 
                 "page": dictInt(result,"page"), 
-                "char_start": "0", 
+                "char_start": "1", 
                 "char_end": "0" 
             },
         )
